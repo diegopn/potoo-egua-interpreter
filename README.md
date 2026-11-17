@@ -30,9 +30,9 @@ interactive console. The console executes each submitted line in a shared sessio
 output goes to standard output. Diagnostics go to standard error with a line and column and,
 for file execution, the corresponding source path.
 
-File imports use the importing source's directory. The interactive console resolves its first
-file imports from the working directory. The CLI uses `curl` on the system path for HTTP and
-the system's local time zone for dates.
+The CLI resolves entry-program and interactive console imports from the working directory.
+While executing an imported module, it uses that module's directory. The CLI uses `curl`
+on the system path for HTTP and the system's local time zone for dates.
 
 ## Language coverage
 

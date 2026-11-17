@@ -201,14 +201,11 @@ fn global(mut call: Call<'_, '_, '_>) -> Result<Value> {
         }
         "inteiro" | "real" => {
             let input = call.arg(0).js_string();
-            let value = parse_numeric(&input).ok_or_else(|| {
+            let integer = call.name == "inteiro";
+            let value = parse_numeric(&input, integer).ok_or_else(|| {
                 call.error(format!("Somente números podem passar para {}.", call.name))
             })?;
-            Ok(Value::Number(if call.name == "inteiro" {
-                value.trunc()
-            } else {
-                value
-            }))
+            Ok(Value::Number(value))
         }
         "texto" => Ok(Value::text(&match call.arg(0) {
             Value::Null | Value::Undefined => "nulo".into(),
@@ -342,14 +339,20 @@ fn callbacks(mut call: Call<'_, '_, '_>) -> Result<Value> {
     })
 }
 
-fn parse_numeric(text: &str) -> Option<f64> {
+fn parse_numeric(text: &str, integer: bool) -> Option<f64> {
     let digits = |text: &str| !text.is_empty() && text.bytes().all(|ch| ch.is_ascii_digit());
-    let valid = if let Some((integral, fraction)) = text.split_once('.') {
-        digits(integral) && digits(fraction)
+    let number = if let Some((integral, fraction)) = text.split_once('.') {
+        if !digits(integral) || !digits(fraction) {
+            return None;
+        }
+        if integer { integral } else { text }
     } else {
-        digits(text.strip_prefix('-').unwrap_or(text))
+        if !digits(text.strip_prefix('-').unwrap_or(text)) {
+            return None;
+        }
+        text
     };
-    valid.then(|| text.parse().unwrap_or(f64::NAN))
+    number.parse().ok()
 }
 
 fn js_greater(left: &Value, right: &Value) -> bool {

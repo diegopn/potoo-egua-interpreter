@@ -68,7 +68,9 @@ impl Drop for State {
 pub(super) struct Runtime<'a> {
     state: &'a mut State,
     pub host: &'a mut dyn Host,
+    globals: Environment,
     current: Environment,
+    module_path: Option<PathBuf>,
     path: Option<PathBuf>,
     call_stack: Vec<Option<String>>,
     imports: usize,
@@ -91,7 +93,9 @@ impl State {
         let mut runtime = Runtime {
             state: self,
             host,
+            globals: current.clone(),
             current,
+            module_path: None,
             path: path.map(Path::to_owned),
             call_stack: Vec::new(),
             imports: 0,
@@ -402,13 +406,19 @@ impl Runtime<'_> {
         expression.map_or(Ok(Value::Null), |expression| self.evaluate(expression))
     }
 
+    fn resolved_depth(&self, depth: Option<usize>) -> Option<usize> {
+        // An imported function keeps its closure. Its bindings belong to the
+        // interpreter that resolved its declaration.
+        depth.filter(|_| Rc::ptr_eq(&self.globals, &global(&self.current)))
+    }
+
     fn lookup(&self, name: &Token, depth: Option<usize>) -> Result<Value> {
-        if let Some(depth) = depth {
+        if let Some(depth) = self.resolved_depth(depth) {
             return Ok(ancestor(&self.current, depth)
                 .and_then(|scope| scope.borrow().values.get(&name.text).cloned())
                 .unwrap_or(Value::Undefined));
         }
-        find(&global(&self.current), &name.text).ok_or_else(|| {
+        find(&self.globals, &name.text).ok_or_else(|| {
             self.error(
                 name.location,
                 format!("Variável não definida '{}'.", name.text),
@@ -424,7 +434,8 @@ impl Runtime<'_> {
                 let Value::Object(class) = self.lookup(keyword, *depth)? else {
                     return Err(self.error(keyword.location, "Superclasse não definida."));
                 };
-                let receiver = depth
+                let receiver = self
+                    .resolved_depth(*depth)
                     .and_then(|n| n.checked_sub(1))
                     .and_then(|n| ancestor(&self.current, n))
                     .and_then(|scope| scope.borrow().values.get("isto").cloned())
@@ -435,8 +446,8 @@ impl Runtime<'_> {
             }
             Expr::Assign(name, depth, expression) => {
                 let value = self.evaluate(expression)?;
-                let scope = if let Some(depth) = depth {
-                    ancestor(&self.current, *depth)
+                let scope = if let Some(depth) = self.resolved_depth(*depth) {
+                    ancestor(&self.current, depth)
                 } else {
                     find_scope(&self.current, &name.text)
                 };
@@ -728,17 +739,21 @@ impl Runtime<'_> {
             return Err(self.error(at, "O valor não admite sobrescrita por índice."));
         };
         let key = key_string(&index);
+        if "length".encode_utf16().eq(key.iter().copied())
+            && matches!(&*object.borrow(), Object::List(..))
+        {
+            let length = new.js_number();
+            if !(0.0..=f64::from(u32::MAX)).contains(&length) || length.fract() != 0.0 {
+                return Err(self.error(at, "Tamanho de vetor inválido."));
+            }
+            let Object::List(items, _) = &mut *object.borrow_mut() else {
+                unreachable!();
+            };
+            return self.resize_list(items, length as usize, Value::Undefined, at);
+        }
         let numeric = index.js_number();
         match &mut *object.borrow_mut() {
             Object::List(items, properties) => {
-                if "length".encode_utf16().eq(key.iter().copied()) {
-                    let length = new.js_number();
-                    if !(0.0..=f64::from(u32::MAX)).contains(&length) || length.fract() != 0.0 {
-                        return Err(self.error(at, "Tamanho de vetor inválido."));
-                    }
-                    self.resize_list(items, length as usize, Value::Undefined, at)?;
-                    return Ok(());
-                }
                 let n = wrap_index(numeric, items.len());
                 let array_index = (0.0..f64::from(u32::MAX)).contains(&n)
                     && n.fract() == 0.0
@@ -798,13 +813,8 @@ impl Runtime<'_> {
 
     fn call(&mut self, callee: Value, mut args: Vec<Value>, at: Location) -> Result<Value> {
         if let Value::Native(native) = callee {
-            // These text functions document defaults for their last argument.
-            let minimum = match native.name {
-                "fatiar" | "preencha_início" | "preencha_fim" => 2,
-                _ => native.arity,
-            };
-            if args.len() < minimum {
-                args.resize(minimum, Value::Null);
+            if args.len() < native.arity {
+                args.resize(native.arity, Value::Null);
             }
             return match builtins::invoke(self, &native, &args, at) {
                 Err(Signal::Break(_) | Signal::Continue(_)) => {
@@ -915,7 +925,7 @@ impl Runtime<'_> {
         }
         let module = self
             .host
-            .load_module(self.path.as_deref(), &path)
+            .load_module(self.module_path.as_deref(), &path)
             .map_err(|error| self.host_error(at, error))?;
         let program = crate::parse(&module.source)
             .and_then(ParsedProgram::resolve)
@@ -924,11 +934,15 @@ impl Runtime<'_> {
                 Signal::Error(error)
             })?;
         let root = self.state.global_scope();
+        let caller_globals = std::mem::replace(&mut self.globals, root.clone());
+        let caller_module = self.module_path.replace(module.path.clone());
         let original = self.path.replace(module.path);
         self.imports += 1;
         let result = self.in_scope(&program.0, root.clone());
         self.imports -= 1;
         self.path = original;
+        self.module_path = caller_module;
+        self.globals = caller_globals;
         result?;
         let exported = find(&root, "exports").unwrap_or(Value::Undefined);
         if let Value::Object(object) = &exported

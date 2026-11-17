@@ -174,6 +174,7 @@ pub(super) fn http(call: Call<'_, '_, '_>) -> Result<Value> {
     } else {
         format!("https://{url}")
     };
+    url::Url::parse(&url).map_err(|_| call.error(format!("URL inválida: {url}")))?;
     let (method, body) = match call.name {
         "obter" => ("GET", None),
         "excluir" => ("DELETE", None),

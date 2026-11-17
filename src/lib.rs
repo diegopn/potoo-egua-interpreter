@@ -143,7 +143,8 @@ pub trait Host {
     /// Writes a line produced by `escreva`.
     fn write_line(&mut self, line: &str) -> io::Result<()>;
 
-    /// Resolves a file import from the path of the containing source, if known.
+    /// Resolves a file import. The entry program passes no module path.
+    /// An imported module passes the path returned by the host for that module.
     fn load_module(&mut self, _from: Option<&Path>, _path: &str) -> io::Result<ModuleSource> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
