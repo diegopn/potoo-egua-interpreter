@@ -1,6 +1,6 @@
 <h1 align="center">Égua Interpreter</h1>
 
-<p align="center">An initial Rust library and CLI scaffold for the Égua programming language.</p>
+<p align="center">An independent Rust library and CLI for the Égua programming language.</p>
 
 <p align="center">
   <a href="https://diegopn.github.io/potoo-site/">Website</a> ·
@@ -14,25 +14,56 @@
   <img alt="CLI" src="https://img.shields.io/badge/CLI-6A4C93?style=for-the-badge">
 </p>
 
-Égua is an interpreted programming language with Portuguese keywords. This repository targets Égua itself; the implementation will document supported syntax and behavior as compatibility work proceeds.
+Égua is a general-purpose programming language with Portuguese syntax, first-class functions,
+and object-oriented features. Pseudolanguages primarily describe algorithms for instruction.
+Égua defines executable programs with classes, modules, and standard libraries.
 
-This repository is only a starting scaffold. It does not yet parse or execute Égua source, and no interpreter features are currently implemented. The Rust implementation will be developed here independently from the original application.
+This implementation targets [Égua v1.3.16](https://github.com/eguadev/egua/tree/v1.3.16).
+See the [official language documentation](https://egua.dev/) for syntax and the
+[tagged source](https://github.com/eguadev/egua/tree/v1.3.16/src) for version-specific
+semantics. The [original project uses the MIT license](https://github.com/eguadev/egua/blob/v1.3.16/LICENSE).
 
-## Original language references
+## Command line
 
-- [Official Égua website and documentation](https://egua.dev/)
-- [Official Égua source repository](https://github.com/eguadev/egua)
+Invoke `potoo-egua` with a UTF-8 source file to execute it, or without arguments to open the
+interactive console. The console executes each submitted line in a shared session. Program
+output goes to standard output. Diagnostics go to standard error with a line and column and,
+for file execution, the corresponding source path.
 
-These references define the language compatibility work. This repository will list its supported syntax, runtime behavior, and limitations after implementation begins.
+File imports use the importing source's directory. The interactive console resolves its first
+file imports from the working directory. The CLI uses `curl` on the system path for HTTP and
+the system's local time zone for dates.
+
+## Language coverage
+
+- Variables, local blocks, scalar literals, vectors, dictionaries, indexing, and mutation.
+- Arithmetic, comparisons, short-circuit conditions, membership, and bitwise operators.
+- `se`, `senãose`, `senão`, `enquanto`, `para`, `fazer` (also `faça` before a block), `escolha`,
+  `pausa`, `continua`, and `tente` with `pegue`, `senão`, and `finalmente`.
+- Named and anonymous functions, closures, parameters, classes, constructors, inheritance,
+  `isto`, and `super`.
+- Built-in functions, file modules through `importar` and `exports`, and the
+  `matemática`, `textos`, `tempo`, and `requisição` standard libraries.
+
+The interpreter follows the tag's expression precedence and scope rules. In language
+conditions, only `nulo` and `falso` are false. Collection predicates use the tagged
+library's conversion of callback results.
+
+## Embedding
+
+Use `parse` and `ParsedProgram::resolve` to prepare source, or `check` to validate
+it without execution. `run` writes output to a Rust stream. `run_with_host` accepts a
+`Host` for output, imports, HTTP, time, waiting, random seeds, and execution callbacks.
+`Session` retains globals between submissions and can execute a resolved `Program`.
+
+The host can inspect variables at statement boundaries and cancel execution. The library
+leaves file and HTTP access to the host and applies limits to function and import nesting.
 
 ## Development
 
-Run these commands from the repository root:
-
 ```sh
 cargo fmt --all -- --check
-cargo check
-cargo test
+cargo check --locked
 ```
 
 ## Project policies
