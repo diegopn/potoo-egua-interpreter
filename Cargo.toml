@@ -1,0 +1,16 @@
+[package]
+name = "potoo-egua-interpreter"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/diegopn/potoo-egua-interpreter"
+readme = "README.md"
+description = "Initial scaffold for an independent Rust interpreter for the Égua programming language"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "potoo-egua"
+path = "src/bin/potoo-egua.rs"
