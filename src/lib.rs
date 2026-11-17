@@ -143,13 +143,18 @@ pub trait Host {
     /// Writes a line produced by `escreva`.
     fn write_line(&mut self, line: &str) -> io::Result<()>;
 
-    /// Resolves a file import. The entry program passes no module path.
-    /// An imported module passes the path returned by the host for that module.
+    /// Resolves a file import from the calling program or module's path, when known.
     fn load_module(&mut self, _from: Option<&Path>, _path: &str) -> io::Result<ModuleSource> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Importação de arquivos indisponível.",
         ))
+    }
+
+    /// Supplies the path passed to [Host::load_module] for an entry program's imports.
+    /// Defaults to the source path. Imported modules use their own paths.
+    fn entry_import_path<'path>(&self, path: Option<&'path Path>) -> Option<&'path Path> {
+        path
     }
 
     /// Sends an HTTP request. The host controls which destinations are available.

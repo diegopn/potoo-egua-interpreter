@@ -26,6 +26,10 @@ impl<W: Write> Host for Console<W> {
         Ok(ModuleSource { path, source })
     }
 
+    fn entry_import_path<'path>(&self, _path: Option<&'path Path>) -> Option<&'path Path> {
+        None
+    }
+
     fn request(&mut self, request: &HttpRequest<'_>) -> io::Result<HttpResponse> {
         let mut command = Command::new("curl");
         command.args([

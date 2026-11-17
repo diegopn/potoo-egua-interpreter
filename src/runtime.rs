@@ -90,12 +90,13 @@ impl State {
             self.globals = Some(globals.clone());
             globals
         };
+        let module_path = host.entry_import_path(path).map(Path::to_owned);
         let mut runtime = Runtime {
             state: self,
             host,
             globals: current.clone(),
             current,
-            module_path: None,
+            module_path,
             path: path.map(Path::to_owned),
             call_stack: Vec::new(),
             imports: 0,
