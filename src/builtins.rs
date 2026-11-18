@@ -207,16 +207,17 @@ fn global(mut call: Call<'_, '_, '_>) -> Result<Value> {
             })?;
             Ok(Value::Number(value))
         }
-        "texto" => Ok(Value::text(&match call.arg(0) {
-            Value::Null | Value::Undefined => "nulo".into(),
-            Value::Bool(true) => "verdadeiro".into(),
-            Value::Bool(false) => "falso".into(),
-            Value::Date(_) | Value::Native(_) => "<dicionário>".into(),
+        "texto" => Ok(match call.arg(0) {
+            Value::Text(text) => Value::Text(text.clone()),
+            Value::Null | Value::Undefined => Value::text("nulo"),
+            Value::Bool(true) => Value::text("verdadeiro"),
+            Value::Bool(false) => Value::text("falso"),
+            Value::Date(_) | Value::Native(_) => Value::text("<dicionário>"),
             Value::Object(object) if !matches!(&*object.borrow(), Object::List(..)) => {
-                "<dicionário>".into()
+                Value::text("<dicionário>")
             }
-            value => value.js_string(),
-        })),
+            value => Value::Text(value.js_string_units().into()),
+        }),
         "tamanho" => length(&call),
         "ordenar" => {
             let list = list_ref(call.arg(0)).ok_or_else(|| call.invalid())?;
@@ -373,7 +374,12 @@ fn js_add(left: &Value, right: &Value) -> Value {
     if matches!(left, Value::Text(_) | Value::Object(_) | Value::Native(_))
         || matches!(right, Value::Text(_) | Value::Object(_) | Value::Native(_))
     {
-        Value::text(&format!("{}{}", left.js_string(), right.js_string()))
+        Value::Text(
+            left.js_string_units()
+                .into_iter()
+                .chain(right.js_string_units())
+                .collect(),
+        )
     } else {
         Value::Number(left.js_number() + right.js_number())
     }

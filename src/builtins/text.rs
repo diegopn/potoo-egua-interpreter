@@ -37,8 +37,8 @@ pub(super) const CONSTANTS: &[(&str, &str)] = &[
 pub(super) fn invoke(call: Call<'_, '_, '_>) -> Result<Value> {
     let value = call.text(0)?;
     Ok(match call.name {
-        "maiúsculo" => Value::text(&String::from_utf16_lossy(value).to_uppercase()),
-        "minúsculo" => Value::text(&String::from_utf16_lossy(value).to_lowercase()),
+        "maiúsculo" => Value::Text(change_case(value, true).into()),
+        "minúsculo" => Value::Text(change_case(value, false).into()),
         "apara" => Value::Text(trim_whitespace(value).into()),
         "tamanho" => Value::Number(value.len() as f64),
         "contém" => Value::Bool(position(value, call.text(1)?).is_some()),
@@ -50,17 +50,15 @@ pub(super) fn invoke(call: Call<'_, '_, '_>) -> Result<Value> {
             let mut result = value.to_vec();
             for argument in &call.args[1..] {
                 let replacement = match argument {
-                    Value::Bool(true) => "verdadeiro".into(),
-                    Value::Bool(false) => "falso".into(),
-                    Value::Null => "nulo".into(),
-                    Value::Object(_) | Value::Date(_) | Value::Native(_) => "<dicionário>".into(),
-                    _ => argument.js_string(),
+                    Value::Bool(true) => "verdadeiro".encode_utf16().collect(),
+                    Value::Bool(false) => "falso".encode_utf16().collect(),
+                    Value::Null => "nulo".encode_utf16().collect(),
+                    Value::Object(_) | Value::Date(_) | Value::Native(_) => {
+                        "<dicionário>".encode_utf16().collect()
+                    }
+                    _ => argument.js_string_units(),
                 };
-                result = replace_first(
-                    &result,
-                    &marker,
-                    &replacement.encode_utf16().collect::<Vec<_>>(),
-                );
+                result = replace_first(&result, &marker, &replacement);
             }
             Value::Text(result.into())
         }
@@ -149,6 +147,32 @@ pub(super) fn invoke(call: Call<'_, '_, '_>) -> Result<Value> {
         }
         _ => unreachable!(),
     })
+}
+
+fn change_case(text: &[u16], uppercase: bool) -> Vec<u16> {
+    let mut result = Vec::with_capacity(text.len());
+    let mut valid = String::new();
+    for decoded in char::decode_utf16(text.iter().copied()) {
+        match decoded {
+            Ok(ch) => valid.push(ch),
+            Err(error) => {
+                append_case_mapped(&valid, uppercase, &mut result);
+                valid.clear();
+                result.push(error.unpaired_surrogate());
+            }
+        }
+    }
+    append_case_mapped(&valid, uppercase, &mut result);
+    result
+}
+
+fn append_case_mapped(text: &str, uppercase: bool, output: &mut Vec<u16>) {
+    let mapped = if uppercase {
+        text.to_uppercase()
+    } else {
+        text.to_lowercase()
+    };
+    output.extend(mapped.encode_utf16());
 }
 
 fn position(text: &[u16], needle: &[u16]) -> Option<usize> {

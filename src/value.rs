@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -43,6 +44,7 @@ pub(super) struct Routine {
     pub name: Option<String>,
     pub declaration: Rc<Function>,
     pub closure: Environment,
+    pub globals: Environment,
     pub path: Option<PathBuf>,
     pub initializer: bool,
 }
@@ -105,18 +107,18 @@ impl Value {
             Self::Date(d) => d.timestamp_millis() as f64,
             Self::Text(_) | Self::Object(_) => {
                 let text = self.js_string();
-                let text = text.trim();
+                let text = text.trim_matches(js_whitespace);
                 if text.is_empty() {
                     return 0.0;
                 }
                 if text.starts_with("0x") || text.starts_with("0X") {
-                    return u64::from_str_radix(&text[2..], 16).map_or(f64::NAN, |n| n as f64);
+                    return parse_radix(&text[2..], 16).unwrap_or(f64::NAN);
                 }
                 if text.starts_with("0b") || text.starts_with("0B") {
-                    return u64::from_str_radix(&text[2..], 2).map_or(f64::NAN, |n| n as f64);
+                    return parse_radix(&text[2..], 2).unwrap_or(f64::NAN);
                 }
                 if text.starts_with("0o") || text.starts_with("0O") {
-                    return u64::from_str_radix(&text[2..], 8).map_or(f64::NAN, |n| n as f64);
+                    return parse_radix(&text[2..], 8).unwrap_or(f64::NAN);
                 }
                 match text {
                     "Infinity" | "+Infinity" => f64::INFINITY,
@@ -136,6 +138,10 @@ impl Value {
 
     pub fn js_string(&self) -> String {
         self.format(false, false, &mut HashSet::new())
+    }
+
+    pub fn js_string_units(&self) -> Vec<u16> {
+        self.format_string_units(&mut HashSet::new())
     }
 
     pub fn output(&self) -> String {
@@ -215,6 +221,95 @@ impl Value {
             }
         }
     }
+
+    fn format_string_units(&self, seen: &mut HashSet<*const RefCell<Object>>) -> Vec<u16> {
+        match self {
+            Self::Text(text) => text.to_vec(),
+            Self::Object(object) if matches!(&*object.borrow(), Object::List(..)) => {
+                let address = Rc::as_ptr(object);
+                if !seen.insert(address) {
+                    return Vec::new();
+                }
+                let Object::List(items, _) = &*object.borrow() else {
+                    unreachable!();
+                };
+                let mut result = Vec::new();
+                for (index, item) in items.iter().enumerate() {
+                    if index != 0 {
+                        result.push(u16::from(b','));
+                    }
+                    if !matches!(item, Self::Null | Self::Undefined) {
+                        result.extend(item.format_string_units(seen));
+                    }
+                }
+                seen.remove(&address);
+                result
+            }
+            _ => self.js_string().encode_utf16().collect(),
+        }
+    }
+}
+
+fn js_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0009}'
+            | '\u{000a}'
+            | '\u{000b}'
+            | '\u{000c}'
+            | '\u{000d}'
+            | '\u{0020}'
+            | '\u{00a0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+    )
+}
+
+fn parse_radix(digits: &str, radix: u32) -> Option<f64> {
+    if digits.is_empty() {
+        return None;
+    }
+
+    const BASE: u64 = 1_000_000_000;
+    let mut decimal = vec![0_u32];
+    for byte in digits.bytes() {
+        let digit = match byte {
+            b'0'..=b'9' => u32::from(byte - b'0'),
+            b'a'..=b'f' => u32::from(byte - b'a') + 10,
+            b'A'..=b'F' => u32::from(byte - b'A') + 10,
+            _ => return None,
+        };
+        if digit >= radix {
+            return None;
+        }
+
+        let mut carry = u64::from(digit);
+        for part in &mut decimal {
+            let value = u64::from(*part) * u64::from(radix) + carry;
+            *part = (value % BASE) as u32;
+            carry = value / BASE;
+        }
+        while carry != 0 {
+            decimal.push((carry % BASE) as u32);
+            carry /= BASE;
+        }
+    }
+
+    let mut text = decimal
+        .last()
+        .expect("radix conversion has an initial digit")
+        .to_string();
+    for part in decimal.iter().rev().skip(1) {
+        write!(&mut text, "{part:09}").expect("writing to a string cannot fail");
+    }
+    text.parse().ok()
 }
 
 pub(super) fn number_string(n: f64) -> String {

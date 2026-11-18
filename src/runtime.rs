@@ -334,6 +334,7 @@ impl Runtime<'_> {
                         name: Some(name.text.clone()),
                         declaration: declaration.clone(),
                         closure: self.current.clone(),
+                        globals: self.globals.clone(),
                         path: self.path.clone(),
                         initializer: false,
                     },
@@ -375,6 +376,7 @@ impl Runtime<'_> {
                                 name: Some(name.text.clone()),
                                 declaration: declaration.clone(),
                                 closure: closure.clone(),
+                                globals: self.globals.clone(),
                                 path: self.path.clone(),
                                 initializer: name.text == "construtor",
                             },
@@ -499,6 +501,7 @@ impl Runtime<'_> {
                     name: None,
                     declaration: declaration.clone(),
                     closure: self.current.clone(),
+                    globals: self.globals.clone(),
                     path: self.path.clone(),
                     initializer: false,
                 },
@@ -581,7 +584,17 @@ impl Runtime<'_> {
                         Object::List(items, _) => {
                             items.iter().any(|item| item.same_value_zero(&left))
                         }
-                        Object::Dictionary(values) => values.contains_key(&key_string(&left)),
+                        Object::Dictionary(values) => {
+                            let key = key_string(&left);
+                            let constructor = "constructor".encode_utf16().collect::<Vec<_>>();
+                            if values.contains_key(constructor.as_slice()) {
+                                return Err(self.error(
+                                    operator.location,
+                                    "Tipo de chamada inválida com 'em'.",
+                                ));
+                            }
+                            values.contains_key(&key) || object_prototype_has(&key)
+                        }
                         _ => {
                             return Err(
                                 self.error(operator.location, "Tipo de chamada inválida com 'em'.")
@@ -890,10 +903,12 @@ impl Runtime<'_> {
                 .insert(parameter.name.text.clone(), value);
         }
         let original = std::mem::replace(&mut self.path, routine.path.clone());
+        let original_globals = std::mem::replace(&mut self.globals, routine.globals.clone());
         self.call_stack.push(routine.name.clone());
         let returned = self.in_scope(&routine.declaration.body, environment);
         self.call_stack.pop();
         self.path = original;
+        self.globals = original_globals;
         let value = match returned {
             Err(Signal::Return(value, _)) => value,
             Ok(()) => Value::Null,
@@ -934,6 +949,7 @@ impl Runtime<'_> {
         self.imports += 1;
         let result = self.in_scope(&program.0, root.clone());
         self.imports -= 1;
+        root.borrow_mut().parent = Some(caller_globals.clone());
         self.path = original;
         self.module_path = caller_module;
         self.globals = caller_globals;
@@ -1010,8 +1026,27 @@ fn find_method(class: &ObjectRef, name: &str) -> Option<Routine> {
 fn key_string(value: &Value) -> Rc<[u16]> {
     match value {
         Value::Text(text) => text.clone(),
-        _ => value.js_string().encode_utf16().collect(),
+        _ => value.js_string_units().into(),
     }
+}
+
+fn object_prototype_has(key: &[u16]) -> bool {
+    [
+        "__defineGetter__",
+        "__defineSetter__",
+        "__lookupGetter__",
+        "__lookupSetter__",
+        "__proto__",
+        "constructor",
+        "hasOwnProperty",
+        "isPrototypeOf",
+        "propertyIsEnumerable",
+        "toLocaleString",
+        "toString",
+        "valueOf",
+    ]
+    .iter()
+    .any(|name| name.encode_utf16().eq(key.iter().copied()))
 }
 
 fn number_key(key: &[u16], number: f64) -> bool {

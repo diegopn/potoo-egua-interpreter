@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use serde_json::Value as Json;
 use super::Call;
 use crate::HttpRequest;
 use crate::runtime::{Result, Runtime};
-use crate::value::{Fields, Object, Value};
+use crate::value::{Fields, Object, Value, number_string};
 
 pub(super) const TIME_FUNCTIONS: &[(&str, usize)] = &[
     ("agora", 0),
@@ -182,15 +183,11 @@ pub(super) fn http(call: Call<'_, '_, '_>) -> Result<Value> {
             let value = call.arg(1);
             let body = match value {
                 Value::Null | Value::Undefined => None,
-                Value::Object(_) | Value::Native(_) | Value::Date(_) => Some(
-                    to_json(value, &mut HashSet::new(), 0)
-                        .ok_or_else(|| {
-                            call.error(
-                                "Não foi possível converter os dados da requisição para JSON.",
-                            )
-                        })?
-                        .to_string(),
-                ),
+                Value::Object(_) | Value::Native(_) | Value::Date(_) => {
+                    Some(to_json(value, &mut HashSet::new(), 0).ok_or_else(|| {
+                        call.error("Não foi possível converter os dados da requisição para JSON.")
+                    })?)
+                }
                 _ => Some(value.js_string()),
             };
             (if call.name == "enviar" { "POST" } else { "PUT" }, body)
@@ -220,52 +217,92 @@ fn to_json(
     value: &Value,
     seen: &mut HashSet<*const RefCell<Object>>,
     depth: usize,
-) -> Option<Json> {
+) -> Option<String> {
     if depth > 128 {
         return None;
     }
     Some(match value {
-        Value::Null | Value::Undefined => Json::Null,
-        Value::Bool(flag) => Json::Bool(*flag),
-        Value::Number(number) => {
-            serde_json::Number::from_f64(*number).map_or(Json::Null, Json::Number)
-        }
-        Value::Text(text) => Json::String(String::from_utf16_lossy(text)),
-        Value::Native(_) => Json::Object(serde_json::Map::new()),
-        Value::Date(date) => Json::String(date.to_rfc3339_opts(SecondsFormat::Millis, true)),
+        Value::Null | Value::Undefined => "null".to_owned(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) if number.is_finite() => number_string(*number),
+        Value::Number(_) => "null".to_owned(),
+        Value::Text(text) => json_string(text),
+        Value::Native(native) => format!("{{\"arityValue\":{}}}", native.arity),
+        Value::Date(date) => json_string(
+            date.to_rfc3339_opts(SecondsFormat::Millis, true)
+                .encode_utf16()
+                .collect::<Vec<_>>(),
+        ),
         Value::Object(object) => {
             let address = Rc::as_ptr(object);
             if !seen.insert(address) {
                 return None;
             }
             let result = match &*object.borrow() {
-                Object::List(items, _) => Json::Array(
-                    items
+                Object::List(items, _) => {
+                    let entries = items
                         .iter()
                         .map(|value| to_json(value, seen, depth + 1))
-                        .collect::<Option<_>>()?,
-                ),
+                        .collect::<Option<Vec<_>>>()?;
+                    format!("[{}]", entries.join(","))
+                }
                 Object::Dictionary(fields)
                 | Object::Module(fields)
                 | Object::Class(_, fields)
                 | Object::Function(_, fields)
                 | Object::Instance(_, fields, _) => {
-                    let mut entries = serde_json::Map::new();
+                    let mut entries = Vec::new();
                     for (key, value) in fields {
                         if !matches!(value, Value::Undefined) {
-                            entries.insert(
-                                String::from_utf16_lossy(key),
-                                to_json(value, seen, depth + 1)?,
-                            );
+                            entries.push(format!(
+                                "{}:{}",
+                                json_string(key),
+                                to_json(value, seen, depth + 1)?
+                            ));
                         }
                     }
-                    Json::Object(entries)
+                    format!("{{{}}}", entries.join(","))
                 }
             };
             seen.remove(&address);
             result
         }
     })
+}
+
+fn json_string(text: impl AsRef<[u16]>) -> String {
+    let text = text.as_ref();
+    let mut result = String::from("\"");
+    let mut index = 0;
+    while index < text.len() {
+        let unit = text[index];
+        index += 1;
+        match unit {
+            0x08 => result.push_str("\\b"),
+            0x09 => result.push_str("\\t"),
+            0x0a => result.push_str("\\n"),
+            0x0c => result.push_str("\\f"),
+            0x0d => result.push_str("\\r"),
+            0x22 => result.push_str("\\\""),
+            0x5c => result.push_str("\\\\"),
+            0x00..=0x1f => {
+                write!(&mut result, "\\u{unit:04x}").expect("writing to a string cannot fail")
+            }
+            0xd800..=0xdbff if index < text.len() && (0xdc00..=0xdfff).contains(&text[index]) => {
+                let low = text[index];
+                index += 1;
+                let scalar =
+                    0x1_0000 + ((u32::from(unit) - 0xd800) << 10) + (u32::from(low) - 0xdc00);
+                result.push(char::from_u32(scalar).expect("valid UTF-16 surrogate pair"));
+            }
+            0xd800..=0xdfff => {
+                write!(&mut result, "\\u{unit:04x}").expect("writing to a string cannot fail")
+            }
+            _ => result.push(char::from_u32(u32::from(unit)).expect("non-surrogate UTF-16 unit")),
+        }
+    }
+    result.push('\"');
+    result
 }
 
 fn json_value(runtime: &mut Runtime<'_>, value: Json) -> Value {

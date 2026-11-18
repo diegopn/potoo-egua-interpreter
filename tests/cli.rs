@@ -97,3 +97,28 @@ fn interactive_console_reuses_variables_across_input_lines() {
     assert!(stdout.contains("6\n"));
     assert!(stdout.contains("égua>"));
 }
+
+#[test]
+fn cli_resolves_nested_imports_from_each_module_directory() {
+    let directory = ProgramDirectory::new();
+    fs::create_dir_all(directory.0.join("pkg")).unwrap();
+    directory.write(
+        "main.egua",
+        "var modulo = importar(\"pkg/modulo.egua\");\nescreva(modulo.somar(2, 5));",
+    );
+    directory.write("pkg/modulo.egua", "var valores = importar(\"valores.egua\");\nexports = {\"somar\": função(a, b) { retorna a + b + valores.bônus; }};");
+    directory.write("pkg/valores.egua", "exports = {\"bônus\": 10};");
+
+    let output = Command::new(CLI)
+        .current_dir(&directory.0)
+        .arg("main.egua")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "17\n");
+}
