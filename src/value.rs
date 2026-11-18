@@ -9,7 +9,54 @@ use chrono::{DateTime, Utc};
 use crate::parser::Function;
 use crate::runtime::Environment;
 
-pub(super) type Fields = HashMap<Rc<[u16]>, Value>;
+#[derive(Clone, Default)]
+pub(super) struct Fields {
+    order: Vec<Rc<[u16]>>,
+    values: HashMap<Rc<[u16]>, Value>,
+}
+
+impl Fields {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, key: Rc<[u16]>, value: Value) -> Option<Value> {
+        if let Some(existing) = self.values.get_mut(key.as_ref()) {
+            return Some(std::mem::replace(existing, value));
+        }
+        self.order.push(key.clone());
+        self.values.insert(key, value)
+    }
+
+    pub fn get(&self, key: &[u16]) -> Option<&Value> {
+        self.values.get(key)
+    }
+
+    pub fn contains_key(&self, key: &[u16]) -> bool {
+        self.values.contains_key(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Rc<[u16]>, &Value)> {
+        self.order.iter().map(|key| {
+            (
+                key,
+                self.values
+                    .get(key.as_ref())
+                    .expect("ordered field key has a value"),
+            )
+        })
+    }
+}
+
+impl FromIterator<(Rc<[u16]>, Value)> for Fields {
+    fn from_iter<T: IntoIterator<Item = (Rc<[u16]>, Value)>>(iter: T) -> Self {
+        let mut fields = Self::new();
+        for (key, value) in iter {
+            fields.insert(key, value);
+        }
+        fields
+    }
+}
 pub(super) type ObjectRef = Rc<RefCell<Object>>;
 
 #[derive(Clone)]

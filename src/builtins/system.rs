@@ -1,16 +1,99 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, SecondsFormat, TimeZone, Timelike, Utc};
-use serde_json::Value as Json;
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use super::Call;
 use crate::HttpRequest;
 use crate::runtime::{Result, Runtime};
 use crate::value::{Fields, Object, Value, number_string};
+
+enum OrderedJson {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Array(Vec<OrderedJson>),
+    Object(Vec<(String, OrderedJson)>),
+}
+
+impl<'de> Deserialize<'de> for OrderedJson {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OrderedJsonVisitor;
+
+        impl<'de> Visitor<'de> for OrderedJsonVisitor {
+            type Value = OrderedJson;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON value")
+            }
+
+            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Null)
+            }
+
+            fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Null)
+            }
+
+            fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Bool(value))
+            }
+
+            fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Number(value as f64))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Number(value as f64))
+            }
+
+            fn visit_f64<E>(self, value: f64) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::Number(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::String(value.to_owned()))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
+                Ok(OrderedJson::String(value))
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element()? {
+                    values.push(value);
+                }
+                Ok(OrderedJson::Array(values))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut fields = Vec::new();
+                while let Some(field) = map.next_entry()? {
+                    fields.push(field);
+                }
+                Ok(OrderedJson::Object(fields))
+            }
+        }
+
+        deserializer.deserialize_any(OrderedJsonVisitor)
+    }
+}
 
 pub(super) const TIME_FUNCTIONS: &[(&str, usize)] = &[
     ("agora", 0),
@@ -207,7 +290,7 @@ pub(super) fn http(call: Call<'_, '_, '_>) -> Result<Value> {
     if !(200..300).contains(&response.status) {
         return Err(call.error(format!("Erro na requisição: status {}", response.status)));
     }
-    Ok(match serde_json::from_str(&response.body) {
+    Ok(match serde_json::from_str::<OrderedJson>(&response.body) {
         Ok(json) => json_value(call.runtime, json),
         Err(_) => Value::text(&response.body),
     })
@@ -252,7 +335,16 @@ fn to_json(
                 | Object::Function(_, fields)
                 | Object::Instance(_, fields, _) => {
                     let mut entries = Vec::new();
-                    for (key, value) in fields {
+                    let mut properties: Vec<_> = fields.iter().collect();
+                    properties.sort_by(|(left, _), (right, _)| {
+                        match (array_index(left), array_index(right)) {
+                            (Some(left), Some(right)) => left.cmp(&right),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => std::cmp::Ordering::Equal,
+                        }
+                    });
+                    for (key, value) in properties {
                         if !matches!(value, Value::Undefined) {
                             entries.push(format!(
                                 "{}:{}",
@@ -268,6 +360,23 @@ fn to_json(
             result
         }
     })
+}
+
+fn array_index(key: &[u16]) -> Option<u32> {
+    if key.is_empty() || (key.len() > 1 && key[0] == u16::from(b'0')) {
+        return None;
+    }
+    let mut value = 0_u64;
+    for unit in key {
+        if !(u16::from(b'0')..=u16::from(b'9')).contains(unit) {
+            return None;
+        }
+        value = value * 10 + u64::from(*unit - u16::from(b'0'));
+        if value > u64::from(u32::MAX - 1) {
+            return None;
+        }
+    }
+    Some(value as u32)
 }
 
 fn json_string(text: impl AsRef<[u16]>) -> String {
@@ -305,20 +414,20 @@ fn json_string(text: impl AsRef<[u16]>) -> String {
     result
 }
 
-fn json_value(runtime: &mut Runtime<'_>, value: Json) -> Value {
+fn json_value(runtime: &mut Runtime<'_>, value: OrderedJson) -> Value {
     match value {
-        Json::Null => Value::Null,
-        Json::Bool(flag) => Value::Bool(flag),
-        Json::Number(number) => Value::Number(number.as_f64().unwrap_or(f64::NAN)),
-        Json::String(text) => Value::text(&text),
-        Json::Array(items) => {
+        OrderedJson::Null => Value::Null,
+        OrderedJson::Bool(flag) => Value::Bool(flag),
+        OrderedJson::Number(number) => Value::Number(number),
+        OrderedJson::String(text) => Value::text(&text),
+        OrderedJson::Array(items) => {
             let values = items
                 .into_iter()
                 .map(|item| json_value(runtime, item))
                 .collect();
             runtime.list(values)
         }
-        Json::Object(entries) => {
+        OrderedJson::Object(entries) => {
             let values: Fields = entries
                 .into_iter()
                 .map(|(key, value)| (key.encode_utf16().collect(), json_value(runtime, value)))

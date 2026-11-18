@@ -21,7 +21,7 @@
 
 Originally developed as part of the Potoo IDE project, this interpreter is an independent Rust software package intended to be distributed separately from the IDE. It can be embedded as a library in other Rust projects or run as a standalone command-line tool on Linux, macOS, and Windows.
 
-Égua is a general-purpose programming language with Portuguese syntax, first-class functions, classes, modules, and standard libraries. This interpreter targets [Égua v1.3.16](https://github.com/eguadev/egua/tree/v1.3.16).
+Égua is an interpreted programming language with Portuguese syntax, designed for teaching programming. It has first-class functions, classes, modules, and standard libraries. This interpreter targets [Égua v1.3.16](https://github.com/eguadev/egua/tree/v1.3.16).
 
 ## Original language references
 
@@ -43,7 +43,7 @@ escreva(total);
 Install [Rust and Cargo](https://www.rust-lang.org/tools/install) first. This project requires Rust 1.93 or newer.
 
 ```sh
-git clone --branch develop https://github.com/diegopn/potoo-egua-interpreter.git
+git clone --branch main https://github.com/diegopn/potoo-egua-interpreter.git
 cd potoo-egua-interpreter
 cargo install --path . --locked --bin potoo-egua
 ```
@@ -57,6 +57,10 @@ cargo build --release --locked --bin potoo-egua
 ```
 
 The executable is written to `target/release/` (`potoo-egua.exe` on Windows).
+
+### Prebuilt CLI packages
+
+GitHub releases provide `x86_64-unknown-linux-gnu` (`.tar.gz`), `x86_64-pc-windows-msvc` (`.zip`, containing `potoo-egua.exe`), and `x86_64-apple-darwin` (`.tar.gz`, Intel macOS) packages. There is no Apple Silicon build.
 
 ### Run a source file or open the console
 
@@ -106,9 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 The host can inspect variables at statement boundaries and cancel execution. The library
-leaves file and HTTP access to the host and applies limits to function and import nesting.
-Implement `Host::load_module` to provide file imports and `Host::request` to provide HTTP
-access. `Session` is the entry point for an interactive console that retains global variables.
+leaves file and HTTP access to the host: implement `Host::load_module` for file imports and
+`Host::request` for HTTP. It caps function-call nesting at 128, file-import nesting at 64,
+and HTTP JSON nesting at 128 levels to bound runaway programs and serialization work.
+`Session` is the entry point for an interactive console that retains global variables.
 
 ## Development
 

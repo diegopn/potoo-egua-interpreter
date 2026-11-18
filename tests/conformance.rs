@@ -30,6 +30,13 @@ fn number_coercion_trims_javascript_byte_order_mark_whitespace() {
 }
 
 #[test]
+fn number_string_formatting_matches_javascript_exponent_signs_and_thresholds() {
+    let source = "escreva(0.0000001);\nescreva(0.000001);\nescreva(1000000000000000000000);";
+
+    assert_eq!(output(source), "1e-7\n0.000001\n1e+21\n");
+}
+
+#[test]
 fn text_case_conversion_preserves_unicode_context_and_surrogate_units() {
     let source = "var textos = importar(\"textos\");\nescreva(textos.minúsculo(\"ΟΣ\"));\nvar unidade = textos.caractere_em(\"😀\", 0);\nescreva(textos.código_em(textos.maiúsculo(unidade), 0));\nescreva(textos.código_em(texto(unidade), 0));\nescreva(textos.código_em(textos.formate(\"{}\", unidade), 0));";
 
@@ -55,6 +62,20 @@ fn dictionary_membership_rejects_values_that_override_the_prototype_constructor(
     let source = "var d = {\"constructor\": nulo};\ntente { escreva(\"nome\" em d); } pegue { escreva(\"erro\"); }";
 
     assert_eq!(output(source), "erro\n");
+}
+
+#[test]
+fn dictionary_bracket_access_converts_falsy_values_to_null() {
+    let source = "var d = {\"zero\": 0, \"falso\": falso, \"vazio\": \"\", \"nulo\": nulo};\nescreva(d[\"zero\"]);\nescreva(d[\"falso\"]);\nescreva(d[\"vazio\"]);\nescreva(d[\"nulo\"]);\nescreva(d.zero);";
+
+    assert_eq!(output(source), "nulo\nnulo\nnulo\nnulo\n0\n");
+}
+
+#[test]
+fn list_extension_fills_gaps_with_null_as_the_tagged_runtime_does() {
+    let source = "var items = [1]; items[3] = 4; escreva(items[1] == nulo); escreva(items[2] == nulo); escreva(tamanho(items));";
+
+    assert_eq!(output(source), "verdadeiro\nverdadeiro\n4\n");
 }
 
 #[test]
@@ -430,6 +451,87 @@ var sorteado = aleatório_entre(1, 9); escreva(sorteado >= 1 e sorteado < 9);";
     assert_eq!(host.requests[8].body, None);
     assert_eq!(host.requests[9].body.as_deref(), Some("texto"));
     assert_eq!(host.requests[10].body.as_deref(), Some("{\"n\":null}"));
+}
+
+#[test]
+fn http_json_keeps_javascript_object_key_order() {
+    let fields = (0..16)
+        .map(|index| format!("\"k{index:02}\":{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expected = (0..16)
+        .map(|index| format!("\"k{index:02}\":{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let source = format!(
+        "var req = importar(\"requisição\"); req.enviar(\"https://api.example/order\", {{{fields}}});"
+    );
+    let expected = format!("{{{expected}}}");
+    let mut host = DeterministicHost {
+        output: Vec::new(),
+        instant: Utc.with_ymd_and_hms(2024, 2, 29, 12, 34, 56).unwrap(),
+        offset: FixedOffset::west_opt(3 * 60 * 60).unwrap(),
+        waits: Vec::new(),
+        requests: Vec::new(),
+        seed_calls: 0,
+    };
+
+    run_with_host(&source, None, &mut host).unwrap();
+
+    assert_eq!(host.requests[0].body.as_deref(), Some(expected.as_str()));
+}
+
+#[test]
+fn http_json_orders_integer_properties_before_other_keys() {
+    let source = "var req = importar(\"requisição\"); req.enviar(\"https://api.example/order\", {\"b\": 1, \"4294967295\": 3, \"4294967294\": 4, \"10\": 10, \"2\": 2, \"01\": 1, \"0\": 0});";
+    let mut host = DeterministicHost {
+        output: Vec::new(),
+        instant: Utc.with_ymd_and_hms(2024, 2, 29, 12, 34, 56).unwrap(),
+        offset: FixedOffset::west_opt(3 * 60 * 60).unwrap(),
+        waits: Vec::new(),
+        requests: Vec::new(),
+        seed_calls: 0,
+    };
+
+    run_with_host(source, None, &mut host).unwrap();
+
+    assert_eq!(
+        host.requests[0].body.as_deref(),
+        Some("{\"0\":0,\"2\":2,\"10\":10,\"4294967294\":4,\"b\":1,\"4294967295\":3,\"01\":1}")
+    );
+}
+
+#[test]
+fn http_json_response_property_order_survives_reserialization() {
+    #[derive(Default)]
+    struct OrderedResponseHost {
+        bodies: Vec<Option<String>>,
+    }
+
+    impl Host for OrderedResponseHost {
+        fn write_line(&mut self, _line: &str) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn request(&mut self, request: &HttpRequest<'_>) -> io::Result<HttpResponse> {
+            self.bodies.push(request.body.map(str::to_owned));
+            Ok(HttpResponse {
+                status: 200,
+                body: if request.method == "GET" {
+                    "{\"z\":1,\"a\":2}".to_owned()
+                } else {
+                    "{}".to_owned()
+                },
+            })
+        }
+    }
+
+    let source = "var req = importar(\"requisição\"); var objeto = req.obter(\"https://api.example/source\"); req.enviar(\"https://api.example/target\", objeto);";
+    let mut host = OrderedResponseHost::default();
+
+    run_with_host(source, None, &mut host).unwrap();
+
+    assert_eq!(host.bodies, [None, Some("{\"z\":1,\"a\":2}".to_owned())]);
 }
 
 #[test]
