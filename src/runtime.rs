@@ -407,14 +407,8 @@ impl Runtime<'_> {
         expression.map_or(Ok(Value::Null), |expression| self.evaluate(expression))
     }
 
-    fn resolved_depth(&self, depth: Option<usize>) -> Option<usize> {
-        // An imported function keeps its closure. Its bindings belong to the
-        // interpreter that resolved its declaration.
-        depth.filter(|_| Rc::ptr_eq(&self.globals, &global(&self.current)))
-    }
-
     fn lookup(&self, name: &Token, depth: Option<usize>) -> Result<Value> {
-        if let Some(depth) = self.resolved_depth(depth) {
+        if let Some(depth) = depth {
             return Ok(ancestor(&self.current, depth)
                 .and_then(|scope| scope.borrow().values.get(&name.text).cloned())
                 .unwrap_or(Value::Undefined));
@@ -435,8 +429,7 @@ impl Runtime<'_> {
                 let Value::Object(class) = self.lookup(keyword, *depth)? else {
                     return Err(self.error(keyword.location, "Superclasse não definida."));
                 };
-                let receiver = self
-                    .resolved_depth(*depth)
+                let receiver = (*depth)
                     .and_then(|n| n.checked_sub(1))
                     .and_then(|n| ancestor(&self.current, n))
                     .and_then(|scope| scope.borrow().values.get("isto").cloned())
@@ -447,8 +440,8 @@ impl Runtime<'_> {
             }
             Expr::Assign(name, depth, expression) => {
                 let value = self.evaluate(expression)?;
-                let scope = if let Some(depth) = self.resolved_depth(*depth) {
-                    ancestor(&self.current, depth)
+                let scope = if let Some(depth) = depth {
+                    ancestor(&self.current, *depth)
                 } else {
                     find_scope(&self.current, &name.text)
                 };
@@ -973,16 +966,6 @@ fn ancestor(current: &Environment, depth: usize) -> Option<Environment> {
         scope = parent;
     }
     Some(scope)
-}
-
-fn global(current: &Environment) -> Environment {
-    let mut scope = current.clone();
-    loop {
-        let Some(parent) = scope.borrow().parent.clone() else {
-            return scope.clone();
-        };
-        scope = parent;
-    }
 }
 
 fn find_scope(current: &Environment, name: &str) -> Option<Environment> {
