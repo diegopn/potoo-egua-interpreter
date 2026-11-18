@@ -14,4 +14,4 @@ For non-security issues, see [CONTRIBUTING.md](CONTRIBUTING.md). For conduct con
 
 ## Security boundaries
 
-The repository currently contains only a crate scaffold and does not execute Égua source. This policy will be updated with the runtime boundaries and resource limits before source execution is implemented. When execution is introduced, hosts running untrusted source should apply process isolation; resource limits alone are not an operating-system sandbox.
+Égua source runs in the process that calls the interpreter. The interpreter does not create an operating-system sandbox or enforce a general CPU or memory quota. The CLI imports source files from paths used by the program, and its `requisição` service invokes `curl` for the HTTP or HTTPS URL supplied by the program, with a 30-second per-request timeout. These operations use the process's filesystem and network permissions. Embedders should restrict `Host::load_module` to permitted files and `Host::request` to permitted destinations. Run untrusted source in a restricted process with operating-system access and resource limits.
