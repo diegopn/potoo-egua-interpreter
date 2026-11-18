@@ -1,8 +1,13 @@
+<p align="center">
+  <img src="https://diegopn.github.io/potoo-site/src/assets/images/language-interpreter-icon.svg?v=1c651ca7" alt="Potoo IDE language interpreter icon" width="120" />
+</p>
+
 <h1 align="center">Égua Interpreter</h1>
 
-<p align="center">An independent Rust library and CLI for the Égua programming language.</p>
+<p align="center">An independent Rust interpreter library and CLI for the Égua programming language.</p>
 
 <p align="center">
+  <a href="https://github.com/diegopn/potoo-egua-interpreter/releases/latest">Download</a> ·
   <a href="https://diegopn.github.io/potoo-site/">Website</a> ·
   <a href="https://diegopn.github.io/potoo-site/manual/egua/">User manual</a>
 </p>
@@ -14,16 +19,24 @@
   <img alt="CLI" src="https://img.shields.io/badge/CLI-6A4C93?style=for-the-badge">
 </p>
 
-Égua is a general-purpose programming language with Portuguese syntax, first-class functions,
-and object-oriented features. Pseudolanguages primarily describe algorithms for instruction.
-Égua defines executable programs with classes, modules, and standard libraries.
+Originally developed as part of the Potoo IDE project, this interpreter is an independent Rust software package intended to be distributed separately from the IDE. It can be embedded as a library in other Rust projects or run as a standalone command-line tool on Linux, macOS, and Windows.
 
-This implementation targets [Égua v1.3.16](https://github.com/eguadev/egua/tree/v1.3.16).
-See the [official language documentation](https://egua.dev/) for syntax and the
-[tagged source](https://github.com/eguadev/egua/tree/v1.3.16/src) for version-specific
-semantics. The [original project uses the MIT license](https://github.com/eguadev/egua/blob/v1.3.16/LICENSE).
+Égua is a general-purpose programming language with Portuguese syntax, first-class functions, classes, modules, and standard libraries. This interpreter targets [Égua v1.3.16](https://github.com/eguadev/egua/tree/v1.3.16).
 
-## Command line
+## Original language references
+
+- [Official Égua language documentation](https://egua.dev/)
+- [Égua v1.3.16 source](https://github.com/eguadev/egua/tree/v1.3.16/src)
+- [Égua v1.3.16 MIT license](https://github.com/eguadev/egua/blob/v1.3.16/LICENSE)
+
+## Source example
+
+```egua
+var total = 2 + 3;
+escreva(total);
+```
+
+## Standalone command-line runner
 
 ### Install from source
 
@@ -62,22 +75,7 @@ on the system path for HTTP and the system's local time zone for dates. Install 
 the `requisição` HTTP functions in the CLI; requests are limited to HTTP and HTTPS and have
 a 30-second timeout.
 
-## Language coverage
-
-- Variables, local blocks, scalar literals, vectors, dictionaries, indexing, and mutation.
-- Arithmetic, comparisons, short-circuit conditions, membership, and bitwise operators.
-- `se`, `senãose`, `senão`, `enquanto`, `para`, `fazer` (also `faça` before a block), `escolha`,
-  `pausa`, `continua`, and `tente` with `pegue`, `senão`, and `finalmente`.
-- Named and anonymous functions, closures, parameters, classes, constructors, inheritance,
-  `isto`, and `super`.
-- Built-in functions, file modules through `importar` and `exports`, and the
-  `matemática`, `textos`, `tempo`, and `requisição` standard libraries.
-
-The interpreter follows the tag's expression precedence and scope rules. In language
-conditions, only `nulo` and `falso` are false. Collection predicates use the tagged
-library's conversion of callback results.
-
-## Embedding
+## Use as a Rust library
 
 Use `parse` and `ParsedProgram::resolve` to prepare source, or `check` to validate
 it without execution. `run` writes output to a Rust stream. `run_with_host` accepts a
@@ -119,9 +117,6 @@ cargo fmt --all -- --check
 cargo check --locked
 cargo test --locked
 ```
-
-The integration tests in `tests/` cover the public library, host inspection, imported modules,
-source-file execution, diagnostics, CLI argument handling, and the persistent console.
 
 ## Support
 
