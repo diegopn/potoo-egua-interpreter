@@ -60,9 +60,69 @@ cargo build --release --locked --bin potoo-egua
 
 The executable is written to `target/release/` (`potoo-egua.exe` on Windows).
 
-### Prebuilt CLI packages
+### Install prebuilt CLI packages
 
-GitHub releases provide `x86_64-unknown-linux-gnu` (`.tar.gz`), `x86_64-pc-windows-msvc` (`.zip`, containing `potoo-egua.exe`), and `x86_64-apple-darwin` (`.tar.gz`, Intel macOS) packages. There is no Apple Silicon build.
+The v0.1.1 release provides native CLI packages for Linux x86_64 (GNU), Windows x86_64 (MSVC), Intel macOS x86_64, and Apple silicon macOS arm64. Download your platform's archive and `SHA256SUMS` from the [latest release](https://github.com/diegopn/potoo-egua-interpreter/releases/latest), then run the commands below from the folder containing both files. Each archive contains `potoo-egua` (or `potoo-egua.exe` on Windows) and the repository license. Replace `programa.egua` with your source file; the release package does not include a sample file.
+
+The CLI can also open an interactive console when run without a source file. Its HTTP functions require the system's `curl` command on `PATH`; requests support HTTP and HTTPS and time out after 30 seconds.
+
+#### Linux x86_64 (GNU)
+
+```sh
+asset="potoo-egua-interpreter-v0.1.1-x86_64-unknown-linux-gnu.tar.gz"
+grep -F "  $asset" SHA256SUMS | sha256sum --check -
+tar -xzf "$asset"
+mkdir -p "$HOME/.local/bin"
+install -m 755 "${asset%.tar.gz}/potoo-egua" "$HOME/.local/bin/potoo-egua"
+export PATH="$HOME/.local/bin:$PATH"
+potoo-egua programa.egua
+```
+
+To keep the command available in new Linux sessions, add the `export PATH="$HOME/.local/bin:$PATH"` line to your shell profile.
+
+#### Windows x86_64 (MSVC, PowerShell)
+
+```powershell
+$archive = "potoo-egua-interpreter-v0.1.1-x86_64-pc-windows-msvc.zip"
+$line = Get-Content .\SHA256SUMS | Where-Object { $_.EndsWith("  $archive") } | Select-Object -First 1
+if (-not $line) { throw "No SHA256SUMS entry found for $archive" }
+$expected = ($line -split '\s+')[0]
+$actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "SHA-256 mismatch for $archive" }
+$installDir = Join-Path $env:USERPROFILE ".local\bin"
+New-Item -ItemType Directory -Force $installDir | Out-Null
+Expand-Archive -LiteralPath $archive -DestinationPath $installDir
+$exe = Join-Path $installDir "potoo-egua-interpreter-v0.1.1-x86_64-pc-windows-msvc\potoo-egua.exe"
+& $exe .\programa.egua
+```
+
+To run `potoo-egua.exe` from any folder, add `$env:USERPROFILE\.local\bin\potoo-egua-interpreter-v0.1.1-x86_64-pc-windows-msvc` to your user `Path` environment variable in Windows Settings.
+
+#### Intel macOS x86_64
+
+```sh
+asset="potoo-egua-interpreter-v0.1.1-x86_64-apple-darwin.tar.gz"
+grep -F "  $asset" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$asset"
+mkdir -p "$HOME/.local/bin"
+install -m 755 "${asset%.tar.gz}/potoo-egua" "$HOME/.local/bin/potoo-egua"
+export PATH="$HOME/.local/bin:$PATH"
+potoo-egua programa.egua
+```
+
+#### Apple silicon macOS arm64
+
+```sh
+asset="potoo-egua-interpreter-v0.1.1-aarch64-apple-darwin.tar.gz"
+grep -F "  $asset" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$asset"
+mkdir -p "$HOME/.local/bin"
+install -m 755 "${asset%.tar.gz}/potoo-egua" "$HOME/.local/bin/potoo-egua"
+export PATH="$HOME/.local/bin:$PATH"
+potoo-egua programa.egua
+```
+
+On macOS, add the `export PATH="$HOME/.local/bin:$PATH"` line to `~/.zprofile` to keep the command available in future sessions.
 
 ### Run a source file or open the console
 
