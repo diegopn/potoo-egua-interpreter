@@ -69,6 +69,7 @@ The CLI can also open an interactive console when run without a source file. Its
 #### Linux x86_64 (GNU)
 
 ```sh
+set -euo pipefail
 asset="potoo-egua-interpreter-v0.1.1-x86_64-unknown-linux-gnu.tar.gz"
 grep -F "  $asset" SHA256SUMS | sha256sum --check -
 tar -xzf "$asset"
@@ -101,6 +102,7 @@ To run `potoo-egua.exe` from any folder, add `$env:USERPROFILE\.local\bin\potoo-
 #### Intel macOS x86_64
 
 ```sh
+set -euo pipefail
 asset="potoo-egua-interpreter-v0.1.1-x86_64-apple-darwin.tar.gz"
 grep -F "  $asset" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$asset"
@@ -113,6 +115,7 @@ potoo-egua programa.egua
 #### Apple silicon macOS arm64
 
 ```sh
+set -euo pipefail
 asset="potoo-egua-interpreter-v0.1.1-aarch64-apple-darwin.tar.gz"
 grep -F "  $asset" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$asset"
