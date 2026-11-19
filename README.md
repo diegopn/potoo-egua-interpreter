@@ -29,6 +29,8 @@ Originally developed as part of the Potoo IDE project, this interpreter is an in
 - [Égua v1.3.16 source](https://github.com/eguadev/egua/tree/v1.3.16/src)
 - [Égua v1.3.16 MIT license](https://github.com/eguadev/egua/blob/v1.3.16/LICENSE)
 
+See [reference coverage](REFERENCE-COVERAGE.md) for the selected version, tested areas, and host-dependent behavior.
+
 ## Source example
 
 ```egua
